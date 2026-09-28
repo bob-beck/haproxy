@@ -105,6 +105,13 @@ enum {
 	SSL_SOCK_VERIFY_NONE     = 3,
 };
 
+/* order in which a bind's tai-chains are offered to a client */
+enum {
+	SSL_TAI_PREF_UNSET  = 0,
+	SSL_TAI_PREF_SIZE   = 1,  /* smallest chain first */
+	SSL_TAI_PREF_CONFIG = 2,  /* as configured */
+};
+
 /* bind ocsp update mode */
 #define	SSL_SOCK_OCSP_UPDATE_OFF   -1
 #define	SSL_SOCK_OCSP_UPDATE_DFLT   0

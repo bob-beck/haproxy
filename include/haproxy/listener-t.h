@@ -155,6 +155,11 @@ struct ssl_bind_conf {
 #ifdef USE_ECH
 	char *ech_filedir;         /* ECH config, file/directory name */
 #endif
+#ifdef USE_TAI
+	char *tai_chains;          /* chains with trust anchor properties, file or directory */
+	char *tai_keys;            /* keys for tai_chains, file or directory */
+	int tai_preference;        /* order credentials are offered in (SSL_TAI_PREF_*) */
+#endif
 #endif
 };
 

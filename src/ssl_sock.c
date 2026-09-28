@@ -4911,6 +4911,135 @@ error:
 }
 #endif
 
+#ifdef USE_TAI
+/* TLS Trust Anchor Identifiers: a client lists the trust anchors it has in
+ * the trust_anchors extension, and the server picks a certificate chain
+ * issued under one of them.
+ * https://datatracker.ietf.org/doc/draft-ietf-tls-trust-anchor-ids/
+ * A Merkle Tree Certificate names its CA the same way, and is served the
+ * same way.
+ * https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/
+ */
+
+/* Calls <cb>(bio, <arg>) on <path> when it is a file. When it is a directory,
+ * calls <cb> on each regular file in it, in name order, skipping names that
+ * start with a dot. Returns 1 on success. Returns 0 on the first failure,
+ * with <err> filled.
+ */
+static int ssl_sock_tai_for_each_pem(const char *path, int (*cb)(BIO *bio, void *arg),
+                                     void *arg, char **err)
+{
+	struct dirent **de_list;
+	struct stat buf;
+	BIO *bio;
+	int n, i, ret = 1;
+
+	if (stat(path, &buf) != 0) {
+		memprintf(err, "%scannot stat '%s'.\n", err && *err ? *err : "", path);
+		return 0;
+	}
+
+	if (!S_ISDIR(buf.st_mode)) {
+		bio = BIO_new_file(path, "r");
+		if (!bio) {
+			memprintf(err, "%scannot open '%s'.\n", err && *err ? *err : "", path);
+			return 0;
+		}
+		ret = cb(bio, arg);
+		BIO_free(bio);
+		if (!ret)
+			memprintf(err, "%scannot load '%s'.\n", err && *err ? *err : "", path);
+		return ret;
+	}
+
+	n = scandir(path, &de_list, 0, alphasort);
+	if (n < 0) {
+		memprintf(err, "%scannot read directory '%s'.\n", err && *err ? *err : "", path);
+		return 0;
+	}
+
+	for (i = 0; i < n; i++) {
+		struct dirent *de = de_list[i];
+
+		if (ret && de->d_name[0] != '.') {
+			chunk_printf(&trash, "%s/%s", path, de->d_name);
+			if (stat(trash.area, &buf) == 0 && S_ISREG(buf.st_mode)) {
+				bio = BIO_new_file(trash.area, "r");
+				if (!bio || !cb(bio, arg)) {
+					memprintf(err, "%scannot load '%s'.\n", err && *err ? *err : "", trash.area);
+					ret = 0;
+				}
+				BIO_free(bio);
+			}
+		}
+		free(de);
+	}
+	free(de_list);
+	return ret;
+}
+
+static int ssl_sock_tai_keys_cb(BIO *bio, void *arg)
+{
+	return SSL_parse_private_keys(bio, arg);
+}
+
+/* what ssl_sock_tai_chains_cb() needs from ssl_sock_load_tai_credentials() */
+struct ssl_sock_tai_chains_arg {
+	STACK_OF(EVP_PKEY) *keys;
+	STACK_OF(SSL_CREDENTIAL) *creds;
+};
+
+static int ssl_sock_tai_chains_cb(BIO *bio, void *arg)
+{
+	struct ssl_sock_tai_chains_arg *a = arg;
+
+	return SSL_parse_certificates_with_properties(bio, a->keys, a->creds);
+}
+
+/* Adds the chains in <chains>, a PEM file or directory, to <ctx> as
+ * credentials. A chain is served only when the client requests the trust
+ * anchor named in its CERTIFICATE PROPERTIES block. A chain's private key
+ * is matched by public key, from the chain's own file or from <keys>, a PEM
+ * file or directory that may be NULL. With <preference> SSL_TAI_PREF_CONFIG
+ * the chains are offered in the order read. Otherwise the smallest is
+ * offered first. Returns 1 on success and 0 on failure, with <err> filled.
+ */
+static int ssl_sock_load_tai_credentials(SSL_CTX *ctx, const char *chains, const char *keys,
+                                         int preference, char **err)
+{
+	struct ssl_sock_tai_chains_arg arg = { NULL, NULL };
+	int i, ret = 0;
+
+	if (keys) {
+		arg.keys = sk_EVP_PKEY_new_null();
+		if (!arg.keys || !ssl_sock_tai_for_each_pem(keys, ssl_sock_tai_keys_cb, arg.keys, err))
+			goto end;
+	}
+
+	arg.creds = sk_SSL_CREDENTIAL_new_null();
+	if (!arg.creds || !ssl_sock_tai_for_each_pem(chains, ssl_sock_tai_chains_cb, &arg, err))
+		goto end;
+
+	if (preference != SSL_TAI_PREF_CONFIG) {
+		sk_SSL_CREDENTIAL_set_cmp_func(arg.creds, SSL_CREDENTIAL_size_cmp);
+		sk_SSL_CREDENTIAL_sort(arg.creds);
+	}
+
+	for (i = 0; i < sk_SSL_CREDENTIAL_num(arg.creds); i++) {
+		if (!SSL_CTX_add1_credential(ctx, sk_SSL_CREDENTIAL_value(arg.creds, i))) {
+			memprintf(err, "%scannot add a credential from '%s'.\n", err && *err ? *err : "", chains);
+			goto end;
+		}
+	}
+	ret = 1;
+
+end:
+	sk_SSL_CREDENTIAL_pop_free(arg.creds, SSL_CREDENTIAL_free);
+	sk_EVP_PKEY_pop_free(arg.keys, EVP_PKEY_free);
+	return ret;
+}
+#endif /* USE_TAI */
+
 /*
  * This function applies the SSL configuration on a SSL_CTX
  * It returns an error code and fills the <err> buffer
@@ -4925,6 +5054,10 @@ static int ssl_sock_prepare_ctx(struct bind_conf *bind_conf, struct ssl_bind_con
 	const char *conf_ciphers;
 #ifdef HAVE_SSL_CTX_SET_CIPHERSUITES
 	const char *conf_ciphersuites;
+#endif
+#ifdef USE_TAI
+	const char *conf_tai_chains, *conf_tai_keys;
+	int conf_tai_pref;
 #endif
 	const char *conf_curves = NULL;
 	X509_STORE *store = SSL_CTX_get_cert_store(ctx);
@@ -5047,6 +5180,23 @@ static int ssl_sock_prepare_ctx(struct bind_conf *bind_conf, struct ssl_bind_con
 		          err && *err ? *err : "", curproxy->id, conf_ciphers, bind_conf->arg, bind_conf->file, bind_conf->line);
 		cfgerr |= ERR_ALERT | ERR_FATAL;
 	}
+
+#ifdef USE_TAI
+	/* Every SSL_CTX of the bind gets the tai-chains. The SSL_CTX that SNI
+	 * selects serves its own certificate when the client requests no trust
+	 * anchor a tai-chain has.
+	 */
+	conf_tai_chains = (ssl_conf && ssl_conf->tai_chains) ? ssl_conf->tai_chains : bind_conf->ssl_conf.tai_chains;
+	if (conf_tai_chains) {
+		conf_tai_keys = (ssl_conf && ssl_conf->tai_keys) ? ssl_conf->tai_keys : bind_conf->ssl_conf.tai_keys;
+		conf_tai_pref = (ssl_conf && ssl_conf->tai_preference) ? ssl_conf->tai_preference : bind_conf->ssl_conf.tai_preference;
+		if (!ssl_sock_load_tai_credentials(ctx, conf_tai_chains, conf_tai_keys, conf_tai_pref, err)) {
+			memprintf(err, "%sProxy '%s': unable to load the tai-chains '%s' for bind '%s' at [%s:%d].\n",
+			          err && *err ? *err : "", curproxy->id, conf_tai_chains, bind_conf->arg, bind_conf->file, bind_conf->line);
+			cfgerr |= ERR_ALERT | ERR_FATAL;
+		}
+	}
+#endif
 
 #ifdef HAVE_SSL_CTX_SET_CIPHERSUITES
 	conf_ciphersuites = (ssl_conf && ssl_conf->ciphersuites) ? ssl_conf->ciphersuites : bind_conf->ssl_conf.ciphersuites;

@@ -17647,6 +17647,9 @@ crt-list <file>
      - sigalgs
      - ssl-min-ver
      - ssl-max-ver
+     - tai-chains
+     - tai-keys
+     - tai-preference
      - verify
 
      <sslbindconf> also supports the following keywords from the crt-store load
@@ -18266,6 +18269,38 @@ strict-sni
   on global statement "ssl-default-bind-options", and may be selectively
   disabled on a "bind" line using "no-strict-sni". See the "crt" option for
   more information. See "add ssl crt-list" command in the management guide.
+
+tai-chains <path>
+  This setting is only available when support for OpenSSL was built in with
+  USE_TAI. It serves certificate chains selected by TLS Trust Anchor
+  Identifiers.
+  ( https://datatracker.ietf.org/doc/draft-ietf-tls-trust-anchor-ids/ )
+  <path> is a PEM file, or a directory of PEM files, holding certificate
+  chains. Each chain is preceded by a "CERTIFICATE PROPERTIES" block naming
+  its trust anchor, as written by "openssl generate_tai_chain". A chain is
+  served only when the client lists its trust anchor in the trust_anchors
+  extension. The certificate configured with "crt" is served otherwise. A
+  chain's private key is matched by its public key among the keys in the
+  chain's own file and in "tai-keys". The chains are added to every
+  certificate of the bind line. A Merkle Tree Certificate is served the same
+  way, when preceded by the properties block its CA issued with it.
+  ( https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/ )
+  Files in a directory are read in name order. Entries starting with a dot
+  are ignored.
+
+tai-keys <path>
+  This setting is only available when support for OpenSSL was built in with
+  USE_TAI. <path> is a PEM file, or a directory of PEM files, of private keys
+  for the "tai-chains" chains. A chain whose key is in its own file needs no
+  entry here. Encrypted keys are not supported.
+
+tai-preference { size | config }
+  This setting is only available when support for OpenSSL was built in with
+  USE_TAI. When several "tai-chains" chains satisfy a client's request, the
+  one offered is the first in preference order. "size", the default, orders
+  the chains smallest first, so the least bandwidth is used. "config" keeps
+  the order in which the chains were read, which a file holding several chains
+  uses to express its own preference.
 
 tcp-md5sig <password>
   Enables the TCP MD5 signature (RFC 2385 Protection of BGP Sessions via the

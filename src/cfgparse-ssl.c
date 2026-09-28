@@ -928,6 +928,64 @@ static int bind_parse_ciphersuites(char **args, int cur_arg, struct proxy *px, s
 	return ssl_bind_parse_ciphersuites(args, cur_arg, px, &conf->ssl_conf, 0, err);
 }
 
+#ifdef USE_TAI
+/* parse the "tai-chains" bind keyword: a PEM file or directory of chains,
+ * each preceded by a CERTIFICATE PROPERTIES block
+ */
+static int ssl_bind_parse_tai_chains(char **args, int cur_arg, struct proxy *px, struct ssl_bind_conf *conf, int from_cli, char **err)
+{
+	if (!*args[cur_arg + 1]) {
+		memprintf(err, "'%s' : missing file or directory name", args[cur_arg]);
+		return ERR_ALERT | ERR_FATAL;
+	}
+
+	free(conf->tai_chains);
+	conf->tai_chains = strdup(args[cur_arg + 1]);
+	return 0;
+}
+static int bind_parse_tai_chains(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
+{
+	return ssl_bind_parse_tai_chains(args, cur_arg, px, &conf->ssl_conf, 0, err);
+}
+
+/* parse the "tai-keys" bind keyword: a PEM file or directory of private keys
+ * for the "tai-chains" chains
+ */
+static int ssl_bind_parse_tai_keys(char **args, int cur_arg, struct proxy *px, struct ssl_bind_conf *conf, int from_cli, char **err)
+{
+	if (!*args[cur_arg + 1]) {
+		memprintf(err, "'%s' : missing file or directory name", args[cur_arg]);
+		return ERR_ALERT | ERR_FATAL;
+	}
+
+	free(conf->tai_keys);
+	conf->tai_keys = strdup(args[cur_arg + 1]);
+	return 0;
+}
+static int bind_parse_tai_keys(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
+{
+	return ssl_bind_parse_tai_keys(args, cur_arg, px, &conf->ssl_conf, 0, err);
+}
+
+/* parse the "tai-preference" bind keyword: "size" or "config" */
+static int ssl_bind_parse_tai_preference(char **args, int cur_arg, struct proxy *px, struct ssl_bind_conf *conf, int from_cli, char **err)
+{
+	if (strcmp(args[cur_arg + 1], "size") == 0)
+		conf->tai_preference = SSL_TAI_PREF_SIZE;
+	else if (strcmp(args[cur_arg + 1], "config") == 0)
+		conf->tai_preference = SSL_TAI_PREF_CONFIG;
+	else {
+		memprintf(err, "'%s' : expects 'size' or 'config', got '%s'", args[cur_arg], args[cur_arg + 1]);
+		return ERR_ALERT | ERR_FATAL;
+	}
+	return 0;
+}
+static int bind_parse_tai_preference(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
+{
+	return ssl_bind_parse_tai_preference(args, cur_arg, px, &conf->ssl_conf, 0, err);
+}
+#endif /* USE_TAI */
+
 /* parse the "crt" bind keyword. Returns a set of ERR_* flags possibly with an error in <err>. */
 static int bind_parse_crt(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
 {
@@ -2732,6 +2790,11 @@ struct ssl_crtlist_kw ssl_crtlist_kws[] = {
 	{ "npn",                   ssl_bind_parse_npn,              1 }, /* set NPN supported protocols */
 	{ "sigalgs",               ssl_bind_parse_sigalgs,          1 }, /* set SSL signature algorithms */
 	{ "ssl-min-ver",           ssl_bind_parse_tls_method_minmax,1 }, /* minimum version */
+#ifdef USE_TAI
+	{ "tai-chains",            ssl_bind_parse_tai_chains,       1 }, /* trust anchor decorated chains, file or directory */
+	{ "tai-keys",              ssl_bind_parse_tai_keys,         1 }, /* keys for the tai-chains chains, file or directory */
+	{ "tai-preference",        ssl_bind_parse_tai_preference,   1 }, /* order the chains are offered in: size or config */
+#endif
 	{ "ssl-max-ver",           ssl_bind_parse_tls_method_minmax,1 }, /* maximum version */
 	{ "verify",                ssl_bind_parse_verify,           1 }, /* set SSL verify method */
 	{ NULL, NULL, 0 },
@@ -2778,6 +2841,11 @@ static struct bind_kw_list bind_kws = { "SSL", { }, {
 	{ "ssl-min-ver",           bind_parse_tls_method_minmax,  1 }, /* minimum version */
 	{ "ssl-max-ver",           bind_parse_tls_method_minmax,  1 }, /* maximum version */
 	{ "strict-sni",            bind_parse_strict_sni,         0 }, /* refuse negotiation if sni doesn't match a certificate */
+#ifdef USE_TAI
+	{ "tai-chains",            bind_parse_tai_chains,         1 }, /* trust anchor decorated chains, file or directory */
+	{ "tai-keys",              bind_parse_tai_keys,           1 }, /* keys for the tai-chains chains, file or directory */
+	{ "tai-preference",        bind_parse_tai_preference,     1 }, /* order the chains are offered in: size or config */
+#endif
 	{ "tls-tickets",           bind_parse_no_tls_tickets,     0 }, /* enable session resumption tickets */
 	{ "tls-ticket-keys",       bind_parse_tls_ticket_keys,    1 }, /* set file to load TLS ticket keys from */
 	{ "verify",                bind_parse_verify,             1 }, /* set SSL verify method */

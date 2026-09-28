@@ -80,6 +80,10 @@ void ssl_sock_free_ssl_conf(struct ssl_bind_conf *conf)
 #if defined(SSL_CTX_set1_client_sigalgs_list)
 		ha_free(&conf->client_sigalgs);
 #endif
+#ifdef USE_TAI
+		ha_free(&conf->tai_chains);
+		ha_free(&conf->tai_keys);
+#endif
 	}
 }
 
@@ -170,6 +174,19 @@ struct ssl_bind_conf *crtlist_dup_ssl_conf(struct ssl_bind_conf *src)
 		if (!dst->client_sigalgs)
 			goto error;
 	}
+#endif
+#ifdef USE_TAI
+	if (src->tai_chains) {
+		dst->tai_chains = strdup(src->tai_chains);
+		if (!dst->tai_chains)
+			goto error;
+	}
+	if (src->tai_keys) {
+		dst->tai_keys = strdup(src->tai_keys);
+		if (!dst->tai_keys)
+			goto error;
+	}
+	dst->tai_preference = src->tai_preference;
 #endif
 	return dst;
 

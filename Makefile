@@ -36,6 +36,7 @@
 #   USE_OPENSSL_AWSLC       : enable use of AWS-LC
 #   USE_OPENSSL_WOLFSSL     : enable use of wolfSSL with the OpenSSL API
 #   USE_ECH                 : enable use of ECH with the OpenSSL API
+#   USE_TAI                 : enable use of TLS Trust Anchor Identifiers with the OpenSSL API
 #   USE_QUIC                : enable use of QUIC with the quictls API (quictls, libressl, boringssl)
 #   USE_QUIC_OPENSSL_COMPAT : enable use of QUIC with the standard openssl API (limited features)
 #   USE_ENGINE              : enable use of OpenSSL Engine.
@@ -341,7 +342,7 @@ use_opts = USE_EPOLL USE_KQUEUE USE_NETFILTER USE_POLL                        \
            USE_TPROXY USE_LINUX_TPROXY USE_LINUX_CAP                          \
            USE_LINUX_SPLICE USE_LIBCRYPT USE_CRYPT_H USE_ENGINE               \
            USE_GETADDRINFO USE_OPENSSL USE_OPENSSL_WOLFSSL USE_OPENSSL_AWSLC  \
-           USE_ECH USE_TRACE USE_FCGI USE_H2 USE_SPOE                         \
+           USE_ECH USE_TAI USE_TRACE USE_FCGI USE_H2 USE_SPOE                 \
            USE_SSL USE_LUA USE_ACCEPT4 USE_CLOSEFROM USE_ZLIB USE_SLZ         \
            USE_CPU_AFFINITY USE_TFO USE_NS USE_DL USE_RT USE_LIBATOMIC        \
            USE_MATH USE_DEVICEATLAS USE_51DEGREES                             \
